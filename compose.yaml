@@ -28,7 +28,9 @@ services:
     mem_limit: 256m
     depends_on: [webdav]
     environment:
-      TS_AUTHKEY: ${TS_AUTHKEY:?TS_AUTHKEY is missing. Run ./zodav setup, or paste your Tailscale/Headscale auth key into .env (or your hosting panel)}
+      # Only used for the first login; the login is then kept in tailscale-state,
+      # so a single-use key can be removed afterwards.
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
       TS_HOSTNAME: ${ZODAV_HOSTNAME:-zodav}
       TS_USERSPACE: "true"
       TS_STATE_DIR: /var/lib/tailscale
@@ -47,9 +49,9 @@ services:
         set -eu
         printf '%s' '{"TCP":{"80":{"TCPForward":"webdav:8080"}}}' > /run/ts/serve.json
         if [ -n "$$ZODAV_HEADSCALE_URL" ]; then
-          TS_EXTRA_ARGS="--login-server=$${ZODAV_HEADSCALE_URL%/}"
+          TS_EXTRA_ARGS="--login-server=$${ZODAV_HEADSCALE_URL%/} --accept-dns=false"
         else
-          TS_EXTRA_ARGS="--advertise-tags=$$ZODAV_TS_TAG"
+          TS_EXTRA_ARGS="--advertise-tags=$$ZODAV_TS_TAG --accept-dns=false"
         fi
         export TS_EXTRA_ARGS
         exec /usr/local/bin/containerboot

@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-01
+
+### Changed
+
+- `TS_AUTHKEY` is only needed for the first start. The login is kept in the `tailscale-state` volume, so a single-use pre-auth key can be removed from the environment afterwards.
+- The Tailscale sidecar runs with `--accept-dns=false`, so name lookups such as `webdav` always use Docker's resolver.
+- The Headscale guide now uses Headscale 0.29 `grants` with an empty `tagOwners` entry and a tagged single-use pre-auth key, matching hubs where only the administrator can tag devices.
+
 ## [1.0.0] - 2026-10-01
 
 First release.
@@ -27,5 +35,6 @@ First release.
 - Test suite (pytest with a Docker test stack), GitHub Actions CI with shellcheck, compose validation, the compatibility matrix and Trivy image scans, and Renovate for digest updates.
 - Design spec, README and security policy.
 
-[Unreleased]: https://github.com/ali-rajabpour/ZoDAV/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/ali-rajabpour/ZoDAV/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/ali-rajabpour/ZoDAV/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/ali-rajabpour/ZoDAV/releases/tag/v1.0.0

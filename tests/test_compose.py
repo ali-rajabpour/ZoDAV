@@ -120,3 +120,15 @@ def test_init_process_on_long_running_scripts():
 def test_no_unsupported_backup_credentials_passed():
     env = all_services()["backup"]["environment"]
     assert not any(k.startswith("GOOGLE_") for k in env)
+
+
+def test_auth_key_only_needed_for_first_start():
+    env = {k: v for k, v in DUMMY.items() if k != "TS_AUTHKEY"}
+    r = compose_config(env)
+    assert r.returncode == 0, r.stderr
+
+
+def test_sidecar_ignores_tailnet_dns_in_both_modes(cfg):
+    script = "".join(cfg["services"]["tailscale"]["entrypoint"])
+    assert script.count("--accept-dns=false") == 2
+    assert "--login-server=" in script and "--advertise-tags=" in script

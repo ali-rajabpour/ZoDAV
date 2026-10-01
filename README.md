@@ -230,40 +230,43 @@ Zotero Storage is separate from WebDAV and is not read by ZoDAV. Group library f
 
 ## Using Headscale instead of Tailscale
 
-If you run your own [Headscale](https://headscale.net) server, ZoDAV can join it instead of the Tailscale service.
+If you run your own [Headscale](https://headscale.net) server, ZoDAV joins it as one more node. ZoDAV never runs a control server itself: its `tailscale` container is a client sidecar that logs in to your Headscale with a tagged pre-auth key and forwards mesh port 80 to the WebDAV container. The steps below assume Headscale 0.29 or newer with a `grants` policy.
 
-1. Create a pre-auth key on your Headscale server (`headscale preauthkeys create`, see the Headscale documentation for the options of your version). Tag the key `tag:zodav` if you use tag-based policy.
-2. In `.env` set:
-
-   ```bash
-   ZODAV_HEADSCALE_URL=https://headscale.example.com
-   TS_AUTHKEY=your-headscale-preauth-key
-   ```
-
-   Or enter them when `./zodav setup` asks. With Headscale, `ZODAV_TS_TAG` is ignored: the tag comes from the key.
-3. Add a policy that lets your devices reach the ZoDAV machine on port 80. This is an example, adapt the user names to your server:
+1. **Allow the tag in your policy.** Add one entry to `tagOwners` and one grant. An empty owner list means no user can put the tag on a device themselves; only the administrator applies it, through a tagged key:
 
    ```json
    {
-     "groups": {
-       "group:zotero": ["you@"]
-     },
      "tagOwners": {
-       "tag:zodav": ["group:zotero"]
+       "tag:zodav": []
      },
-     "acls": [
-       {
-         "action": "accept",
-         "src": ["group:zotero"],
-         "dst": ["tag:zodav:80"]
-       }
+     "grants": [
+       {"src": ["you@"], "dst": ["tag:zodav"], "ip": ["tcp:80"]}
      ]
    }
    ```
 
-4. Start with `./zodav start`. Your computer must also be connected to your Headscale network.
+   Replace `you@` with your Headscale user (or a group). Default is deny, so this is the only traffic allowed to ZoDAV, and ZoDAV cannot open connections to your devices. Validate with `headscale policy check` and load the policy the way your server does.
 
-The hostname that `./zodav settings` prints is the machine's MagicDNS name on your Headscale network. MagicDNS must be enabled there.
+2. **Create a single-use tagged key** on the Headscale server:
+
+   ```bash
+   headscale preauthkeys create --tags tag:zodav --expiration 1h
+   ```
+
+   On Headscale 0.29 a tagged key needs no `--user`; tagged nodes belong to no user and never expire. Older versions may need `--user`; see `headscale preauthkeys create --help`.
+
+3. **Set two variables** in `.env` (or your hosting panel), then start ZoDAV within the key's lifetime:
+
+   ```bash
+   ZODAV_HEADSCALE_URL=https://headscale.example.com
+   TS_AUTHKEY=hskey-auth-xxxxx
+   ```
+
+   With Headscale, `ZODAV_TS_TAG` is ignored: ZoDAV does not advertise tags itself (with an empty `tagOwners` that would be refused), the tag comes from the key.
+
+4. **After the first start**, `headscale nodes list` shows `zodav` with `tag:zodav`. The login is stored in the `tailscale-state` volume, so you can clear `TS_AUTHKEY`. Only if you delete that volume does ZoDAV need a new key.
+
+5. **Connect Zotero** using the MagicDNS name, `zodav.<your MagicDNS base domain>` (for example `zodav.mesh.internal`), with protocol `http`. MagicDNS must be on in Headscale and accepted on your computer. `./zodav settings` prints the exact name.
 
 ## Deploying with Dokploy, Portainer or Coolify
 
@@ -271,7 +274,7 @@ The hostname that `./zodav settings` prints is the machine's MagicDNS name on yo
 
 1. Create a new compose application from this Git repository (or paste `compose.yaml` and keep the `webdav/`, `audit/` and `backup/` folders next to it, because the images are built from them).
 2. The compose file path is `compose.yaml`.
-3. In the platform's environment form, paste the variables from `.env.example`. At minimum set `ZODAV_PASSWORD` and `TS_AUTHKEY`. Replace every `CHANGE_ME` value.
+3. In the platform's environment form, paste the variables from `.env.example`. At minimum set `ZODAV_PASSWORD`, and `TS_AUTHKEY` for the first start (it can be cleared once ZoDAV has joined your network). Replace every `CHANGE_ME` value.
 4. Do not add ports, domains, labels or a reverse proxy. ZoDAV is reached over the tailnet only.
 5. Deploy. Read the machine name in the Tailscale admin console (or in the `tailscale` container logs) and use it as the Zotero URL, with protocol `http`.
 
@@ -581,7 +584,7 @@ All settings are environment variables, set in `.env` or in your hosting panel. 
 | Name | Required | Default | Meaning |
 |---|---|---|---|
 | `ZODAV_PASSWORD` | yes | none | Password for the Zotero user. 24 to any length, only `A-Z a-z 0-9 _ -`. `./zodav setup` generates one. |
-| `TS_AUTHKEY` | yes | none | Tailscale auth key (tagged `tag:zodav`) or Headscale pre-auth key. |
+| `TS_AUTHKEY` | first start | none | Tailscale auth key (tagged `tag:zodav`) or tagged Headscale pre-auth key. Only used for the first login; may be cleared once ZoDAV has joined. |
 | `ZODAV_HEADSCALE_URL` | no | empty | URL of your Headscale server. Empty means Tailscale. |
 | `ZODAV_HOSTNAME` | no | `zodav` | Machine name on the tailnet. The address is `<name>.<your-tailnet>`. |
 | `ZODAV_TS_TAG` | no | `tag:zodav` | Tag requested when joining Tailscale. Ignored with Headscale. |

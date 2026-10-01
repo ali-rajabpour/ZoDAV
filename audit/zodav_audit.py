@@ -38,7 +38,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 PROJECT_URL = "https://rajabpour.com"
 SEVERITIES = ("error", "warning", "info")
 

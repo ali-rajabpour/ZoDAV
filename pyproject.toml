@@ -1,6 +1,6 @@
 [project]
 name = "zodav-audit"
-version = "1.0.0"
+version = "1.0.1"
 description = "Conformance, integrity and repair checks for Zotero WebDAV servers"
 license = "AGPL-3.0-only"
 authors = [{ name = "Ali Rajabpour Sanati", email = "ali@rajabpour.com" }]
