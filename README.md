@@ -46,6 +46,8 @@ Zotero forum users who hit sync problems are usually told to "Reset File Sync Hi
 - [Switching from Zotero Storage or another WebDAV server](#switching-from-zotero-storage-or-another-webdav-server)
 - [Using Headscale instead of Tailscale](#using-headscale-instead-of-tailscale)
 - [Deploying with Dokploy, Portainer or Coolify](#deploying-with-dokploy-portainer-or-coolify)
+  - [Checks and audits without the zodav script](#checks-and-audits-without-the-zodav-script)
+- [Confirming that files are synced](#confirming-that-files-are-synced)
 - [Letting other containers write files](#letting-other-containers-write-files)
 - [Backups](#backups)
 - [Monitoring and alerts](#monitoring-and-alerts)
@@ -103,7 +105,7 @@ Everything is defined in one `compose.yaml`. There are four containers:
 | Container | What it does |
 |---|---|
 | `webdav` | Apache httpd 2.4 with `mod_dav` and `mod_dav_fs`. `/zotero/` is the only WebDAV location and needs a login. `/healthz` is the only page without a login. Everything else is denied. Runs as `www-data` on a read-only root filesystem. Passwords are hashed with bcrypt into a memory-only (tmpfs) file when the container starts. |
-| `tailscale` | A Tailscale sidecar in userspace mode (no `NET_ADMIN`, no `/dev/net/tun`). It joins your tailnet and forwards tailnet TCP port 80 to `webdav:8080`. It uses Headscale when `ZODAV_HEADSCALE_URL` is set. |
+| `tailscale` | A Tailscale client sidecar in userspace mode. It is only a node that joins your existing tailnet or Headscale server; ZoDAV runs no coordination server, relay or exit node (no `NET_ADMIN`, no `/dev/net/tun`). It forwards tailnet TCP port 80 to `webdav:8080`. It uses Headscale when `ZODAV_HEADSCALE_URL` is set. |
 | `audit` | Runs `zodav-audit watch` every 24 hours (by default) on the data volume, mounted read-only. Writes `latest.json` and `latest.html` reports, prints one summary line per run, and sends alerts. |
 | `backup` | Optional. Runs restic every 24 hours against an off-host repository, with the data volume mounted read-only. Turned on by `COMPOSE_PROFILES=backup`. |
 
@@ -273,7 +275,65 @@ The hostname that `./zodav settings` prints is the machine's MagicDNS name on yo
 4. Do not add ports, domains, labels or a reverse proxy. ZoDAV is reached over the tailnet only.
 5. Deploy. Read the machine name in the Tailscale admin console (or in the `tailscale` container logs) and use it as the Zotero URL, with protocol `http`.
 
-The `./zodav` script is optional on these platforms. The panel's own log and restart buttons cover most of it.
+The `./zodav` script is optional on these platforms. Everything it does can be done from the panel, as described next.
+
+### Checks and audits without the zodav script
+
+**Automatic.** The `audit` container checks every stored file once a day (interval: `ZODAV_AUDIT_INTERVAL_HOURS`) and sends alerts to the channels you configured. In the panel, open the `audit` service logs: each run prints one line such as `zodav-audit watch: 152 attachments, 0 error(s), 0 warning(s) - OK`. To prove alerts arrive, set `ZODAV_IDLE_DAYS=0` and redeploy: every run then raises the idle warning. Set it back afterwards.
+
+**On demand, in the panel's terminal.** Open a terminal (Dokploy: service, then Terminal) in the `audit` container. The password is already in its environment, so no flags are needed:
+
+```sh
+# Is the server Zotero-compatible? Writes only Zotero's own test file and deletes it.
+python /app/zodav_audit.py conformance http://webdav:8080/
+
+# Check every stored attachment now.
+python /app/zodav_audit.py integrity /data/zotero
+
+# Show what repair would do. Changes nothing.
+python /app/zodav_audit.py repair http://webdav:8080/
+```
+
+In a terminal in the `backup` container (only when backups are enabled):
+
+```sh
+restic snapshots                    # list of backups, newest last
+restic ls latest | grep ABCD1234    # is attachment ABCD1234 in the latest backup?
+restic check                        # consistency of the backup repository
+```
+
+**From your computer, over the tailnet.** This tests exactly the path Zotero uses and writes HTML reports you can open:
+
+```sh
+export ZODAV_AUDIT_PASSWORD='your ZODAV_PASSWORD'
+uvx --from git+https://github.com/ali-rajabpour/ZoDAV zodav-audit \
+  conformance http://zodav.your-tailnet.ts.net/ --html conformance.html
+uvx --from git+https://github.com/ali-rajabpour/ZoDAV zodav-audit \
+  integrity http://zodav.your-tailnet.ts.net/ --html integrity.html
+```
+
+**Restore drill.** It needs Docker on the host, so run it over SSH in the folder where the platform checked out this repository. Platforms name the compose project after the application, so pass that name (it is the prefix of the container names in `docker ps`), and make sure the same variables are available (most platforms write them to `.env` in that folder):
+
+```sh
+COMPOSE_PROJECT_NAME=<application-name> sh backup/restore-drill.sh compose.yaml
+```
+
+Run it about once a month. It prints `restore drill ok` when the latest backup restores and checks clean.
+
+## Confirming that files are synced
+
+1. **Zotero shows no error.** The sync button (top right) has no red error mark. Hover over it to see file progress.
+2. **The file is on the server.** In Zotero, right-click a PDF and choose **Show File**. The name of the folder that holds it is the attachment key, for example `ABCD1234`. Then, from a device on the tailnet:
+
+   ```sh
+   curl -u zotero -I http://zodav.your-tailnet.ts.net/zotero/ABCD1234.zip
+   curl -u zotero -I http://zodav.your-tailnet.ts.net/zotero/ABCD1234.prop
+   ```
+
+   `HTTP/1.1 200 OK` for both means the file is stored. `404` means it has not been uploaded yet.
+3. **Counts grow.** The `attachments` number in the audit log line and report grows as you add files. It counts stored files only, not links or notes.
+4. **Download it back (the definitive test).** Either open the PDF on a second computer that uses the same Zotero account, the same WebDAV settings and is on the tailnet, or on the same computer: add a test item with a PDF, sync, delete only the file inside `~/Zotero/storage/<KEY>/` in your file manager (not the item in Zotero), then double-click the item. Zotero downloads it again from ZoDAV.
+5. **The backup holds it.** After the next nightly backup, `restic ls latest | grep <KEY>` in the `backup` container shows the file.
 
 ## Letting other containers write files
 
