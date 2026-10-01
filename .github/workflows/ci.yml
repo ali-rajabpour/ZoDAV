@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: lint
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - name: Shellcheck
+        run: git grep -lIE '^#!.*(/|env )(ba|da)?sh' | xargs shellcheck
+      - name: Ruff check
+        run: uvx ruff@0.16.9 check .
+      - name: Ruff format
+        run: uvx ruff@0.16.9 format --check .
+      - name: Hadolint
+        run: |
+          for f in webdav/Dockerfile audit/Dockerfile backup/Dockerfile; do
+            echo "== $f"
+            docker run --rm -i hadolint/hadolint@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d < "$f"
+          done # v2.15.1
+      - name: Actionlint
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -color # v1.7.12
+
+  unit:
+    name: unit (py${{ matrix.python }})
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - name: Pytest with coverage
+        run: >
+          uv run --no-project --python "${{ matrix.python }}"
+          --with pytest==9.1.1 --with pytest-cov==7.1.0
+          pytest -q -m "not docker" --cov=zodav_audit --cov-report=json
+          --cov-report=term-missing --cov-fail-under=89
+      - name: Coverage summary
+        if: always()
+        run: |
+          python3 - >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, os
+          try:
+              data = json.load(open("coverage.json"))
+          except OSError:
+              raise SystemExit(0)
+          print(f"### Coverage, Python ${{ matrix.python }}: {data['totals']['percent_covered']:.1f}%\n")
+          print("| File | Statements | Missed | Cover |\n|---|---:|---:|---:|")
+          for name, f in sorted(data["files"].items()):
+              s = f["summary"]
+              print(f"| {name} | {s['num_statements']} | {s['missing_lines']} | {s['percent_covered']:.1f}% |")
+          t = data["totals"]
+          print(f"| **Total** | {t['num_statements']} | {t['missing_lines']} | **{t['percent_covered']:.1f}%** |")
+          PY
+
+  test:
+    name: test
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - name: Compose file is valid
+        run: docker compose --env-file .env.example -f compose.yaml config -q
+      - name: Start test stack
+        run: docker compose -f docker-compose.test.yml up -d --build --wait
+      - name: Pytest
+        run: uv run --no-project --with pytest==9.1.1 pytest -q
+      - name: Stop test stack
+        if: always()
+        run: docker compose -f docker-compose.test.yml --profile broken down -v
+
+  smoke:
+    name: smoke
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Deployment smoke test
+        run: tests/smoke.sh
+
+  compat:
+    name: compat
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run compatibility matrix
+        run: compat/run.sh
+      - name: Job summary
+        if: always()
+        run: cat compat/RESULTS.md >> "$GITHUB_STEP_SUMMARY"
+
+  scan:
+    name: scan (${{ matrix.image }})
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [webdav, audit, backup]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build ${{ matrix.image }}
+        run: docker build -t "zodav-${{ matrix.image }}:scan" "${{ matrix.image }}"
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: zodav-${{ matrix.image }}:scan
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"

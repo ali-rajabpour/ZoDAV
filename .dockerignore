@@ -1,0 +1,11 @@
+.git
+docs
+tests
+audit
+backup
+compat
+*.md
+.env*
+__pycache__
+.pytest_cache
+.venv

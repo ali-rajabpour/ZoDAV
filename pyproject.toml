@@ -1,0 +1,41 @@
+[project]
+name = "zodav-audit"
+version = "1.0.0"
+description = "Conformance, integrity and repair checks for Zotero WebDAV servers"
+license = "AGPL-3.0-only"
+authors = [{ name = "Ali Rajabpour Sanati", email = "ali@rajabpour.com" }]
+requires-python = ">=3.10"
+urls = { Homepage = "https://github.com/ali-rajabpour/ZoDAV", Author = "https://rajabpour.com" }
+
+[project.scripts]
+zodav-audit = "zodav_audit:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = { "" = "audit" }
+py-modules = ["zodav_audit"]
+
+[tool.pytest.ini_options]
+pythonpath = ["tests", "audit"]
+testpaths = ["tests"]
+markers = ["docker: needs the docker CLI and the test stack"]
+
+[tool.coverage.run]
+source = ["audit"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["compat"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S"]
+# The formatter wraps code; the remaining long lines are user-facing strings.
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# F401: fixtures are imported by name, so they look unused
+"tests/*" = ["F401", "S101", "S105", "S106", "S108", "S603", "S604", "S607", "S310", "S311", "S314", "S324", "F811"]

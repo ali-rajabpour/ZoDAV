@@ -1,0 +1,51 @@
+name: Bug report
+description: Something in ZoDAV or zodav-audit does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. For security problems use the private advisory link on the issue chooser instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected and what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output of `./zodav status` and relevant logs
+      description: Remove passwords, auth keys, tokens, hostnames you want private and anything from `.env` before pasting.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Host OS
+      placeholder: Debian 12, macOS 15, ...
+    validations:
+      required: true
+  - type: input
+    id: docker
+    attributes:
+      label: Docker and Compose versions
+      placeholder: Docker 27.x, Compose v2.x
+    validations:
+      required: true
+  - type: input
+    id: zotero
+    attributes:
+      label: Zotero version and platform
+      placeholder: Zotero 7.x on Windows, macOS, Linux

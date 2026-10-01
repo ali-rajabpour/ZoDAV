@@ -1,0 +1,102 @@
+name: zodav-test
+
+x-webdav: &webdav
+  image: zodav-webdav:test
+  build: ./webdav
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  environment:
+    ZODAV_PASSWORD: test-zotero-password-0123456789
+    ZODAV_SERVICE_USERNAME: service
+    ZODAV_SERVICE_PASSWORD: test-service-password-0123456789
+  healthcheck:
+    interval: 2s
+    timeout: 3s
+    retries: 30
+
+services:
+  webdav:
+    <<: *webdav
+    ports: ["127.0.0.1:18080:8080"]
+    volumes: ["test-data:/data"]
+    tmpfs: ["/run/zodav:uid=33,gid=33,mode=0700"]
+
+  # 4 MiB data volume, for the disk-full tests.
+  webdav-small:
+    <<: *webdav
+    ports: ["127.0.0.1:18081:8080"]
+    tmpfs:
+      - /run/zodav:uid=33,gid=33,mode=0700
+      - /data:size=4m,uid=33,gid=33,mode=0755
+
+  # One valid attachment, so the backup has something to back up: an empty
+  # store is skipped on purpose and would never turn the backup healthy.
+  seed:
+    image: python:3.12-alpine@sha256:4c47124a8391cb7a9f571164147d154777cf012a4ece5f86097130d7a4478111
+    depends_on:
+      webdav: {condition: service_healthy}
+    restart: "no"
+    command:
+      - python
+      - -c
+      - |
+        import base64, hashlib, io, urllib.request, zipfile
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as z:
+            z.writestr(zipfile.ZipInfo("seed.txt", (2024, 1, 1, 0, 0, 0)), b"seed")
+        zbytes = buf.getvalue()
+        prop = ('<properties version="1"><mtime>1700000000000</mtime><hash>%s</hash>'
+                '</properties>' % hashlib.md5(b"seed").hexdigest()).encode()
+        auth = "Basic " + base64.b64encode(b"zotero:test-zotero-password-0123456789").decode()
+        for name, body in (("SEED0000.zip", zbytes), ("SEED0000.prop", prop)):
+            req = urllib.request.Request("http://webdav:8080/zotero/" + name, data=body,
+                                         method="PUT", headers={"Authorization": auth})
+            urllib.request.urlopen(req, timeout=30).close()
+
+  backup: &backup
+    image: zodav-backup:test
+    depends_on:
+      seed: {condition: service_completed_successfully}
+    build: ./backup
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+    environment:
+      RESTIC_REPOSITORY: /repo
+      RESTIC_PASSWORD: test-restic-password-0123456789
+      BACKUP_INTERVAL_SECONDS: "5"
+      BACKUP_MAX_AGE_SECONDS: "60"
+    volumes:
+      - test-data:/data:ro
+      - backup-repo:/repo
+    tmpfs:
+      - /state:uid=65534,gid=65534,mode=0700
+      - /cache:uid=65534,gid=65534,mode=0700
+      - /tmp:uid=65534,gid=65534,mode=0700
+    healthcheck:
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Unreachable repository: must log BACKUP FAILED and turn unhealthy. In a
+  # profile so `up --wait` for the rest of the stack is not held up by it.
+  backup-broken:
+    <<: *backup
+    profiles: [broken]
+    environment:
+      RESTIC_REPOSITORY: sftp:nobody@unreachable.invalid:/repo
+      RESTIC_PASSWORD: test-restic-password-0123456789
+      BACKUP_INTERVAL_SECONDS: "5"
+      BACKUP_MAX_AGE_SECONDS: "30"
+    volumes:
+      - test-data:/data:ro
+    healthcheck:
+      interval: 2s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  test-data:
+  backup-repo:

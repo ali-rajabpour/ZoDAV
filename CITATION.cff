@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use ZoDAV in your work, please cite it as below."
+type: software
+title: "ZoDAV: private Zotero WebDAV sync and zodav-audit"
+authors:
+  - family-names: "Rajabpour Sanati"
+    given-names: "Ali"
+    email: "ali@rajabpour.com"
+    website: "https://rajabpour.com"
+version: 1.0.0
+date-released: 2026-10-01
+license: AGPL-3.0-only
+repository-code: "https://github.com/ali-rajabpour/ZoDAV"
+url: "https://rajabpour.com"
+abstract: >-
+  ZoDAV is a private file-sync server for Zotero that is never on the public
+  internet, reachable only over a Tailscale or Headscale network. It ships with
+  zodav-audit, a standard-library Python tool that checks any Zotero WebDAV
+  server for protocol conformance and file integrity, repairs what can be
+  repaired safely, and raises alerts, with encrypted restic backups and a
+  restore drill.
+keywords:
+  - zotero
+  - webdav
+  - self-hosted
+  - tailscale
+  - file-sync
+  - backup
+  - conformance-testing

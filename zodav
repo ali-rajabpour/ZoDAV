@@ -1,0 +1,277 @@
+#!/bin/sh
+# ZoDAV control script: set up, start and check your private Zotero sync server.
+set -eu
+
+cd "$(dirname "$0")"
+ROOT=$PWD
+
+say() { printf '%s\n' "$*"; }
+die() { printf 'zodav: %s\n' "$*" >&2; exit 1; }
+
+usage() {
+  cat <<'EOF'
+ZoDAV - private Zotero file sync
+
+Usage: ./zodav <command>
+
+  setup              Ask a few questions and create the .env settings file
+  start              Start ZoDAV and show what to type into Zotero
+  stop               Stop ZoDAV (your files are kept)
+  status             Show what is running
+  settings           Show what to type into Zotero (--show-password to include the password)
+  check              Test the connection and check every stored file
+  report             Save the latest audit report as zodav-report-<date>.html here
+  accept-deletions   After deleting files on purpose, accept the new file count as normal
+  repair [--apply]   Show what could be repaired; with --apply, fix it
+  restore-drill      Prove your backup works by restoring it into a scratch area
+  logs [service]     Show recent log lines (webdav, tailscale, audit, backup)
+  help               Show this text
+EOF
+}
+
+need_docker() {
+  command -v docker >/dev/null 2>&1 || die "Docker is not installed or not on your PATH. Install Docker Desktop (Mac/Windows) or Docker Engine (Linux), then try again."
+  docker compose version >/dev/null 2>&1 || die "'docker compose' is not available. Update Docker or install the Compose plugin."
+  docker info >/dev/null 2>&1 || die "Docker is installed but not running. Start Docker Desktop (or the docker service) and try again."
+}
+
+need_env() {
+  [ -f .env ] || die "no .env file yet. Run ./zodav setup first."
+}
+
+dc() { docker compose "$@"; }
+
+need_running() {
+  [ -n "$(dc ps --status running -q webdav 2>/dev/null)" ] || die "ZoDAV is not running. Run ./zodav start first."
+}
+
+# Reads KEY from .env without executing it; the last assignment wins. Strips
+# a trailing CR, surrounding quotes, and (unquoted values only) an inline
+# " # comment".
+envval() {
+  v=$(sed -n "s/^$1=//p" .env | tail -n 1 | tr -d '\r')
+  case $v in
+    \"?*\") v=${v#\"}; v=${v%\"} ;;
+    \'?*\') v=${v#\'}; v=${v%\'} ;;
+    *) v=$(printf '%s\n' "$v" | sed 's/[[:space:]][[:space:]]*#.*$//; s/[[:space:]]*$//') ;;
+  esac
+  printf '%s\n' "$v"
+}
+
+gen_password() {
+  LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32
+}
+
+ask() {
+  # ask <prompt>; prints the answer. Prompts go to stderr so they show when captured.
+  if [ -t 0 ]; then printf '%s ' "$1" >&2; fi
+  line=''
+  IFS= read -r line || true
+  printf '%s' "$line"
+}
+
+tmp=''
+saved_tty=''
+setup_cleanup() {
+  [ -z "$saved_tty" ] || stty "$saved_tty" 2>/dev/null || true
+  [ -z "$tmp" ] || rm -f "$tmp"
+}
+
+cmd_setup() {
+  # -L so a dangling symlink named .env is refused too, never followed.
+  if [ -e .env ] || [ -L .env ]; then
+    die ".env already exists, so setup will not overwrite it. Edit it by hand, or move it away first."
+  fi
+  [ -f .env.example ] || die ".env.example is missing; run this from the ZoDAV folder."
+  command -v awk >/dev/null 2>&1 || die "awk is required."
+
+  say "ZoDAV setup. Press Enter to skip optional questions."
+  trap setup_cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  # The key is a secret: do not echo it back when typed at a terminal.
+  if [ -t 0 ]; then saved_tty=$(stty -g); stty -echo; fi
+  key=$(ask "Tailscale or Headscale auth key (required):")
+  if [ -n "$saved_tty" ]; then stty "$saved_tty"; saved_tty=''; printf '\n' >&2; fi
+  [ -n "$key" ] || die "an auth key is required. Create one in your Tailscale admin console (Settings > Keys) and run ./zodav setup again."
+  hs=$(ask "Headscale server URL (only if you run Headscale, otherwise Enter):")
+  alert=$(ask "Alert URL for problem notifications (ntfy, Slack or Discord, or Enter):")
+  repo=$(ask "Backup repository, e.g. s3:s3.amazonaws.com/my-bucket (or Enter for no backups):")
+
+  umask 077
+  tmp=$(mktemp ./.env.XXXXXX) || die "cannot create a temporary file in this folder."
+  V_ZODAV_PASSWORD=$(gen_password)
+  V_TS_AUTHKEY=$key
+  V_ZODAV_HEADSCALE_URL=$hs
+  V_ZODAV_ALERT_URL=$alert
+  export V_ZODAV_PASSWORD V_TS_AUTHKEY V_ZODAV_HEADSCALE_URL V_ZODAV_ALERT_URL
+  if [ -n "$repo" ]; then
+    V_COMPOSE_PROFILES=backup
+    V_RESTIC_REPOSITORY=$repo
+    V_RESTIC_PASSWORD=$(gen_password)
+    export V_COMPOSE_PROFILES V_RESTIC_REPOSITORY V_RESTIC_PASSWORD
+  fi
+
+  # Fill the template: replace "KEY=" (or the commented "# KEY=") when a value was given.
+  awk '
+    {
+      key = $0
+      sub(/^# /, "", key)
+      sub(/=.*/, "", key)
+      if (key ~ /^[A-Z_0-9]+$/ && ("V_" key) in ENVIRON && ENVIRON["V_" key] != "") {
+        print key "=" ENVIRON["V_" key]
+      } else {
+        print
+      }
+    }' .env.example >"$tmp" || die "could not write the settings file."
+  # A hard link fails if .env appeared meanwhile, unlike mv, which would replace it.
+  ln "$tmp" .env 2>/dev/null || die ".env appeared while setup was running, so it was not overwritten."
+  rm -f "$tmp"
+  tmp=''
+
+  say ""
+  say "Created .env (readable only by you)."
+  if [ -n "$repo" ]; then
+    say ""
+    say "Your backup password (RESTIC_PASSWORD) is in .env."
+    say "Copy it into a password manager now: without it the backups cannot be restored."
+    say "Your storage provider may also need credentials; see the Backups section of .env."
+  fi
+  say ""
+  say "Next: ./zodav start"
+  say "Once ZoDAV shows up in your Tailscale admin console (Machines), revoke or expire the"
+  say "auth key there: it is only needed for the first login, and ZoDAV remembers its login."
+  say "Telegram and email alerts can also be set in .env (see the Alerts section)."
+}
+
+cmd_start() {
+  need_env
+  # shellcheck disable=SC2012 # fixed name; ls is the portable way to read the mode
+  perm=$(ls -lL .env | cut -c5-10)
+  if [ "$perm" != "------" ]; then
+    chmod 600 .env
+    say ".env was readable by other users; changed it to be readable only by you."
+  fi
+  dc up -d --build
+  # Waiting on every service would hold up the first start until the first
+  # backup finishes (or fails), so only wait for the ones needed for syncing.
+  dc up -d --wait webdav audit
+  cmd_settings
+}
+
+cmd_stop() { need_env; dc down; }
+
+cmd_status() { need_env; dc ps; }
+
+cmd_settings() {
+  show=0
+  for a in "$@"; do
+    case $a in
+      --show-password) show=1 ;;
+      *) die "unknown option '$a'. Usage: ./zodav settings [--show-password]" ;;
+    esac
+  done
+  need_env
+  need_running
+  json=$(dc exec -T tailscale tailscale status --json 2>/dev/null) \
+    || die "could not ask Tailscale for the address. Check ./zodav logs tailscale."
+  # Self is the first block in the output; its DNSName ends with a dot.
+  name=$(printf '%s\n' "$json" | awk '
+    /"Self":/ { s = 1 }
+    s && /"DNSName":/ { gsub(/.*"DNSName": *"/, ""); gsub(/".*/, ""); sub(/\.$/, ""); print; exit }')
+  [ -n "$name" ] || die "ZoDAV has not joined your network yet. Check the auth key in .env and ./zodav logs tailscale."
+  user=$(envval ZODAV_USERNAME)
+  say ""
+  say "Type this into Zotero > Settings > Sync > File Syncing (WebDAV):"
+  say ""
+  say "  Protocol:  http"
+  say "  URL:       $name"
+  say "  Username:  ${user:-zotero}"
+  if [ "$show" = 1 ]; then
+    say "  Password:  $(envval ZODAV_PASSWORD)"
+  else
+    say "  Password:  (hidden; show it with ./zodav settings --show-password)"
+  fi
+  say ""
+  say "Then press Verify Server. This computer must be on your private network."
+}
+
+cmd_check() {
+  need_env
+  need_running
+  user=$(envval ZODAV_USERNAME)
+  rc=0
+  dc run --rm -T audit conformance http://webdav:8080/ --user "${user:-zotero}" || rc=1
+  dc run --rm -T audit integrity /data/zotero || rc=1
+  [ "$rc" = 0 ] || say "Some checks failed. See above for what each problem means and how to fix it."
+  return "$rc"
+}
+
+cmd_report() {
+  need_env
+  out="$PWD/zodav-report-$(date +%Y-%m-%d).html"
+  umask 077
+  if ! err=$(dc cp audit:/reports/latest.html "$out" 2>&1); then
+    rm -f "$out"
+    case $err in
+      *"Could not find the file"*|*"No such file"*)
+        die "no report yet. The first one appears after the first scheduled check; run ./zodav start and try again later." ;;
+      *) die "could not copy the report: $err" ;;
+    esac
+  fi
+  say "Saved $out"
+}
+
+cmd_repair() {
+  apply=''
+  for a in "$@"; do
+    case $a in
+      --apply) apply=--apply ;;
+      *) die "unknown option '$a'. Usage: ./zodav repair [--apply]" ;;
+    esac
+  done
+  need_env
+  need_running
+  user=$(envval ZODAV_USERNAME)
+  # Run as the caller so quarantined files land in this folder owned by them.
+  # shellcheck disable=SC2086 # $apply is a single flag or empty
+  dc run --rm -T --user "$(id -u):$(id -g)" -v "$PWD:/work" -w /work audit \
+    repair http://webdav:8080/ --user "${user:-zotero}" $apply
+}
+
+cmd_accept_deletions() {
+  need_env
+  dc run --rm -T audit watch /data/zotero --reports /reports --backup-state /backup-state --accept-current-count
+}
+
+cmd_restore_drill() {
+  need_env
+  sh "$ROOT/backup/restore-drill.sh" compose.yaml
+}
+
+cmd_logs() {
+  need_env
+  dc logs --tail 100 "$@"
+}
+
+[ $# -ge 1 ] || { usage; exit 0; }
+sub=$1
+shift
+case $sub in
+  help|-h|--help) usage; exit 0 ;;
+  setup) cmd_setup "$@"; exit 0 ;;
+esac
+need_docker
+case $sub in
+  start)         cmd_start "$@" ;;
+  stop)          cmd_stop "$@" ;;
+  status)        cmd_status "$@" ;;
+  settings)      cmd_settings "$@" ;;
+  check)         cmd_check "$@" ;;
+  report)        cmd_report "$@" ;;
+  repair)        cmd_repair "$@" ;;
+  accept-deletions) cmd_accept_deletions "$@" ;;
+  restore-drill) cmd_restore_drill "$@" ;;
+  logs)          cmd_logs "$@" ;;
+  *)             usage >&2; die "unknown command '$sub'." ;;
+esac

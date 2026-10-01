@@ -1,0 +1,131 @@
+name: zodav
+
+x-hardening: &hardening
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+services:
+  webdav:
+    <<: *hardening
+    build: ./webdav
+    mem_limit: 512m
+    environment:
+      ZODAV_PASSWORD: ${ZODAV_PASSWORD:?ZODAV_PASSWORD is missing. Run ./zodav setup, or fill it in .env (or in your hosting panel)}
+      ZODAV_USERNAME: ${ZODAV_USERNAME:-zotero}
+      ZODAV_SERVICE_USERNAME: ${ZODAV_SERVICE_USERNAME:-}
+      ZODAV_SERVICE_PASSWORD: ${ZODAV_SERVICE_PASSWORD:-}
+    volumes:
+      - zodav-data:/data
+    tmpfs:
+      - /run/zodav:uid=33,gid=33,mode=0700
+    networks: [internal, shared]
+
+  tailscale:
+    <<: *hardening
+    image: tailscale/tailscale:v1.102.5@sha256:c507f3a2a6ab1cabd8d809b98edeb41edbd5c3fb6ad9632ffd098b4c7d0b4065
+    mem_limit: 256m
+    depends_on: [webdav]
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:?TS_AUTHKEY is missing. Run ./zodav setup, or paste your Tailscale/Headscale auth key into .env (or your hosting panel)}
+      TS_HOSTNAME: ${ZODAV_HOSTNAME:-zodav}
+      TS_USERSPACE: "true"
+      TS_STATE_DIR: /var/lib/tailscale
+      # The default path the tailscale CLI uses, so `tailscale status` works via exec.
+      TS_SOCKET: /var/run/tailscale/tailscaled.sock
+      TS_AUTH_ONCE: "true"
+      TS_SERVE_CONFIG: /run/ts/serve.json
+      ZODAV_HEADSCALE_URL: ${ZODAV_HEADSCALE_URL:-}
+      ZODAV_TS_TAG: ${ZODAV_TS_TAG:-tag:zodav}
+    # Tailnet port 80 is forwarded to the WebDAV container. TS_EXTRA_ARGS is
+    # computed here because compose cannot branch on a variable being set.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        printf '%s' '{"TCP":{"80":{"TCPForward":"webdav:8080"}}}' > /run/ts/serve.json
+        if [ -n "$$ZODAV_HEADSCALE_URL" ]; then
+          TS_EXTRA_ARGS="--login-server=$${ZODAV_HEADSCALE_URL%/}"
+        else
+          TS_EXTRA_ARGS="--advertise-tags=$$ZODAV_TS_TAG"
+        fi
+        export TS_EXTRA_ARGS
+        exec /usr/local/bin/containerboot
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+    tmpfs:
+      - /run/ts
+      - /var/run/tailscale
+      - /tmp
+    networks: [internal]
+
+  audit:
+    <<: *hardening
+    init: true
+    build: ./audit
+    mem_limit: 256m
+    depends_on: [webdav]
+    environment:
+      ZODAV_AUDIT_PASSWORD: ${ZODAV_PASSWORD:?ZODAV_PASSWORD is missing. Run ./zodav setup, or fill it in .env (or in your hosting panel)}
+      ZODAV_ALERT_URL: ${ZODAV_ALERT_URL:-}
+      ZODAV_TELEGRAM_BOT_TOKEN: ${ZODAV_TELEGRAM_BOT_TOKEN:-}
+      ZODAV_TELEGRAM_CHAT_ID: ${ZODAV_TELEGRAM_CHAT_ID:-}
+      ZODAV_SMTP_HOST: ${ZODAV_SMTP_HOST:-}
+      ZODAV_SMTP_PORT: ${ZODAV_SMTP_PORT:-587}
+      ZODAV_SMTP_SECURITY: ${ZODAV_SMTP_SECURITY:-starttls}
+      ZODAV_SMTP_USERNAME: ${ZODAV_SMTP_USERNAME:-}
+      ZODAV_SMTP_PASSWORD: ${ZODAV_SMTP_PASSWORD:-}
+      ZODAV_SMTP_FROM: ${ZODAV_SMTP_FROM:-}
+      ZODAV_SMTP_TO: ${ZODAV_SMTP_TO:-}
+      ZODAV_AUDIT_INTERVAL_HOURS: ${ZODAV_AUDIT_INTERVAL_HOURS:-24}
+      ZODAV_DELETE_ALERT_PERCENT: ${ZODAV_DELETE_ALERT_PERCENT:-10}
+      ZODAV_IDLE_DAYS: ${ZODAV_IDLE_DAYS:-30}
+      ZODAV_MIN_FREE_GB: ${ZODAV_MIN_FREE_GB:-2}
+    volumes:
+      - zodav-data:/data:ro
+      - reports:/reports
+      - backup-state:/backup-state:ro
+    tmpfs:
+      - /tmp:uid=65534,gid=65534,mode=0700
+    networks: [internal]
+
+  backup:
+    <<: *hardening
+    build: ./backup
+    init: true
+    profiles: [backup]
+    mem_limit: 512m
+    environment:
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:-}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-}
+      B2_ACCOUNT_ID: ${B2_ACCOUNT_ID:-}
+      B2_ACCOUNT_KEY: ${B2_ACCOUNT_KEY:-}
+      AZURE_ACCOUNT_NAME: ${AZURE_ACCOUNT_NAME:-}
+      AZURE_ACCOUNT_KEY: ${AZURE_ACCOUNT_KEY:-}
+      RESTIC_REST_USERNAME: ${RESTIC_REST_USERNAME:-}
+      RESTIC_REST_PASSWORD: ${RESTIC_REST_PASSWORD:-}
+    volumes:
+      - zodav-data:/data:ro
+      - backup-state:/state
+      - restic-cache:/cache
+    tmpfs:
+      - /tmp:uid=65534,gid=65534,mode=0700
+    networks: [internal]
+
+networks:
+  internal:
+  # Named so other containers on this host can reach webdav:8080 as "webdav".
+  shared:
+    name: zodav
+
+volumes:
+  zodav-data:
+  tailscale-state:
+  reports:
+  backup-state:
+  restic-cache:

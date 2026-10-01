@@ -1,0 +1,7 @@
+address: 0.0.0.0
+port: 6060
+directory: /data
+permissions: CRUD
+users:
+  - username: compat
+    password: compat-password-0123456789abcdef
