@@ -870,9 +870,9 @@ If ZoDAV helps your research workflow, you can cite it. [CITATION.cff](CITATION.
 
 <a href="https://star-history.com/#ali-rajabpour/ZoDAV&Date">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ali-rajabpour/ZoDAV&type=Date&theme=dark">
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ali-rajabpour/ZoDAV&type=Date">
-    <img alt="Star history chart" src="https://api.star-history.com/svg?repos=ali-rajabpour/ZoDAV&type=Date">
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ali-rajabpour%2Fzodav&type=Date&theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ali-rajabpour%2Fzodav&type=Date">
+    <img alt="Star history chart" src="https://api.star-history.com/svg?repos=ali-rajabpour%2Fzodav&type=Date">
   </picture>
 </a>
 
