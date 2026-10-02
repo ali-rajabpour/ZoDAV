@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-02
+
+### Fixed
+
+- The audit tool now takes the WebDAV user name from `ZODAV_AUDIT_USER` when `--user` is not given, and the `audit` container sets it from `ZODAV_USERNAME`. Before, checks run in the container (and `./zodav check`) always signed in as `zotero` and failed with `AUTH_FAILED` when a different user name was configured.
+
 ## [1.0.1] - 2026-10-01
 
 ### Changed
@@ -35,6 +41,7 @@ First release.
 - Test suite (pytest with a Docker test stack), GitHub Actions CI with shellcheck, compose validation, the compatibility matrix and Trivy image scans, and Renovate for digest updates.
 - Design spec, README and security policy.
 
-[Unreleased]: https://github.com/ali-rajabpour/ZoDAV/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/ali-rajabpour/ZoDAV/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/ali-rajabpour/ZoDAV/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/ali-rajabpour/ZoDAV/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/ali-rajabpour/ZoDAV/releases/tag/v1.0.0

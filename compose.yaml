@@ -70,6 +70,7 @@ services:
     mem_limit: 256m
     depends_on: [webdav]
     environment:
+      ZODAV_AUDIT_USER: ${ZODAV_USERNAME:-zotero}
       ZODAV_AUDIT_PASSWORD: ${ZODAV_PASSWORD:?ZODAV_PASSWORD is missing. Run ./zodav setup, or fill it in .env (or in your hosting panel)}
       ZODAV_ALERT_URL: ${ZODAV_ALERT_URL:-}
       ZODAV_TELEGRAM_BOT_TOKEN: ${ZODAV_TELEGRAM_BOT_TOKEN:-}

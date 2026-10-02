@@ -38,7 +38,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 PROJECT_URL = "https://rajabpour.com"
 SEVERITIES = ("error", "warning", "info")
 
@@ -1927,7 +1927,11 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
 
     def common(sp, html_out=True):
-        sp.add_argument("--user", default="zotero", help="WebDAV user name (default: zotero)")
+        sp.add_argument(
+            "--user",
+            default=os.environ.get("ZODAV_AUDIT_USER") or "zotero",
+            help="WebDAV user name (default: $ZODAV_AUDIT_USER, else zotero)",
+        )
         sp.add_argument("--json", action="store_true", help="print JSON instead of text")
         if html_out:
             sp.add_argument("--html", metavar="FILE", help="also write an HTML report")

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import zodav_audit
 from fakedav import PASSWORD, USER, build_clean_store, build_defect_store, fakedav  # noqa: F401
 from zodav_audit import main
 
@@ -117,3 +118,19 @@ def test_version(capsys):
     with pytest.raises(SystemExit) as e:
         main(["--version"])
     assert e.value.code == 0 and "zodav-audit" in capsys.readouterr().out
+
+
+def test_user_defaults_from_environment(monkeypatch, fakedav):
+    url, srv = fakedav
+    monkeypatch.setenv("ZODAV_AUDIT_USER", "someone")
+    monkeypatch.setenv("ZODAV_AUDIT_PASSWORD", "pw")
+    seen = []
+    orig = zodav_audit.DavStore.__init__
+
+    def spy(self, url, user, password, *a, **kw):
+        seen.append(user)
+        orig(self, url, user, password, *a, **kw)
+
+    monkeypatch.setattr(zodav_audit.DavStore, "__init__", spy)
+    main(["integrity", url])
+    assert seen == ["someone"]

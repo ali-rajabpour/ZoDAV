@@ -638,7 +638,7 @@ The ZoDAV `audit` container runs the same tool.
 
 ### Credentials
 
-The user name comes from `--user` (default `zotero`). The password is **never** a command-line argument. Set `ZODAV_AUDIT_PASSWORD`, or you are asked for it:
+The user name comes from `--user`, else the `ZODAV_AUDIT_USER` environment variable, else `zotero`. Inside the `audit` container `ZODAV_AUDIT_USER` is already set to your `ZODAV_USERNAME`. The password is **never** a command-line argument. Set `ZODAV_AUDIT_PASSWORD`, or you are asked for it:
 
 ```bash
 export ZODAV_AUDIT_PASSWORD='your-password'
