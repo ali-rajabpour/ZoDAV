@@ -278,6 +278,12 @@ If you run your own [Headscale](https://headscale.net) server, ZoDAV joins it as
 4. Do not add ports, domains, labels or a reverse proxy. ZoDAV is reached over the tailnet only.
 5. Deploy. Read the machine name in the Tailscale admin console (or in the `tailscale` container logs) and use it as the Zotero URL, with protocol `http`.
 
+The panel writes your settings, passwords included, to a `.env` file next to the compose file, readable by every account on the host (mode 644), and rewrites it on each deploy. Lock down the application's folder once, on the host, as root. The panel runs as root, so deploys keep working, and the setting survives redeploys because only the `code` folder inside it is recreated. For Dokploy:
+
+```sh
+chmod 700 /etc/dokploy/compose/<app-name>
+```
+
 The `./zodav` script is optional on these platforms. Everything it does can be done from the panel, as described next.
 
 ### Checks and audits without the zodav script
