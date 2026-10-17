@@ -2,7 +2,7 @@
 # the Alpine build of apr-util can only use gdbm, which takes a non-blocking
 # exclusive flock. Concurrent PUTs then fail with 500 "Could not open the lock
 # database". Debian's apr-util defaults to Berkeley DB, which does not.
-FROM httpd:2.4.69@sha256:41163d514c02ac205161c1549b499bc11adfdeb6291735b433d706af7e64382a
+FROM httpd:2.4.69@sha256:c842ac797bd1fe8b3cd26d002ac9d948aa2814097544600600b35aef42e6785a
 
 # /data/zotero is created here, owned by www-data, so a fresh named volume
 # inherits the ownership on first mount.
