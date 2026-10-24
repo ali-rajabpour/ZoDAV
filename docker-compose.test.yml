@@ -33,7 +33,7 @@ services:
   # One valid attachment, so the backup has something to back up: an empty
   # store is skipped on purpose and would never turn the backup healthy.
   seed:
-    image: python:3.14-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72
+    image: python:3.15-alpine@sha256:d44b1254cb92329418d164b22b20d86bbd3869d48e80e09e476531a409a728bb
     depends_on:
       webdav: {condition: service_healthy}
     restart: "no"
