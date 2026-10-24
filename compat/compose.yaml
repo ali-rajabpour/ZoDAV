@@ -12,20 +12,20 @@ services:
     volumes: ["zodav-data:/data"]
 
   rclone:
-    image: rclone/rclone:1.75.1@sha256:45401ad7410db1d67ffdb58e19059ad20b0d8e0285a60e38bbec55cc1019c7a5
+    image: rclone/rclone:1.75.2@sha256:2687085f718d3c628f7fdfb77c52a1d344332aed543110bb88088f2c70d43eb5
     command: ["serve", "webdav", "/data", "--addr", ":8080", "--user", "compat", "--pass", "compat-password-0123456789abcdef"]
     ports: ["127.0.0.1:18181:8080"]
     tmpfs: ["/data"]
 
   hacdias:
-    image: ghcr.io/hacdias/webdav:v5.17.0@sha256:8b8a39de046fd04a2615f51c245883ea40547efba4ad0b4646e1b7a0d5daf23a
+    image: ghcr.io/hacdias/webdav:v5.17.2@sha256:f4b20163b251eadf656e9d9953e5a4a337f6c86483622f80f10a8ef54acbcd7b
     command: ["-c", "/config.yml"]
     ports: ["127.0.0.1:18182:6060"]
     volumes: ["./hacdias.yml:/config.yml:ro"]
     tmpfs: ["/data"]
 
   nginx:
-    image: nginx:1.31.6-alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2
+    image: nginx:1.31.8-alpine@sha256:1ef7ca94d7879df82421428ce13bd1eaa412404953859cf7a5b6512c25e67a60
     ports: ["127.0.0.1:18183:80"]
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
@@ -33,7 +33,7 @@ services:
     tmpfs: ["/data:uid=101,gid=101"]
 
   nextcloud:
-    image: nextcloud:35.0.1-apache@sha256:b1ae671e9815401b0e837b19b9c778e89887721d67f0c8f9d34aa1d27a9a208f
+    image: nextcloud:35.0.2-apache@sha256:89af7ee7a96ff5e9668280566209268ae6b2d02327f6ef6d56f6d68228cf9431
     ports: ["127.0.0.1:18184:80"]
     environment:
       SQLITE_DATABASE: nextcloud
